@@ -6,6 +6,9 @@ import logging
 from pathlib import Path
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
 class AppLogger:
     """Simple structured logger wrapper for application use."""
 
@@ -23,7 +26,7 @@ class AppLogger:
             self.logger.addHandler(stream_handler)
 
             if log_file:
-                log_path = Path("logs") / log_file
+                log_path = PROJECT_ROOT / "logs" / log_file
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 file_handler = logging.FileHandler(log_path)
                 file_handler.setFormatter(formatter)

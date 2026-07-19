@@ -75,5 +75,11 @@ def main():
             time.sleep(10)
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__":    maifrom binanace.client import Client
+client = Client()
+btc = client.get_symbol_ticker(symbol="BTCUSDT")
+print("=" * 50)
+print("FA CRYPTO ENGINE PRO")
+print("=" * 50)
+print("BTC Price:", btc['price'])
+print("=" * 50)
