@@ -9,6 +9,7 @@ from core.indicators import (
     calculate_ema,
     calculate_rsi,
     calculate_adx,
+    calculate_atr,
 )
 from core.risk_manager import RiskManager, TradingMode
 from market.historical_data import get_historical_candles
@@ -122,13 +123,15 @@ def calculate_max_drawdown(
 
 def export_trade_history(
     trade_history: list[dict],
+    csv_file: str,
 ) -> None:
 
     if not trade_history:
         print("No completed trades available.")
         return
 
-    file_path = Path(CSV_FILE)
+    file_path = Path(csv_file)
+
 
     file_path.parent.mkdir(
         parents=True,
@@ -180,7 +183,12 @@ def export_trade_history(
 # BACKTEST ENGINE
 # ============================================================
 
-def run_backtest() -> None:
+def run_backtest(
+    symbol: str = SYMBOL,
+    interval: str = INTERVAL,
+    candle_limit: int = CANDLE_LIMIT,
+    csv_file: str = CSV_FILE,
+) -> None:
 
     settings = RISK_SETTINGS
 
@@ -203,16 +211,18 @@ def run_backtest() -> None:
     # LOAD DATA
     # --------------------------------------------------------
 
+# --------------------------------------------------------
+    # LOAD DATA
+    # --------------------------------------------------------
+
     data = get_historical_candles(
-        symbol=SYMBOL,
-        interval=INTERVAL,
-        limit=CANDLE_LIMIT,
+        symbol=symbol,
+        interval=interval,
+        limit=candle_limit,
     )
 
     if data.empty:
-        raise ValueError(
-            "Historical data is empty."
-        )
+        raise ValueError("Historical data is empty.")
 
     required_columns = {
         "open_time",
@@ -222,10 +232,7 @@ def run_backtest() -> None:
         "volume",
     }
 
-    missing_columns = (
-        required_columns
-        - set(data.columns)
-    )
+    missing_columns = required_columns - set(data.columns)
 
     if missing_columns:
         raise ValueError(
@@ -241,84 +248,48 @@ def run_backtest() -> None:
     ]
 
     for column in numeric_columns:
-        data[column] = data[column].astype(
-            float
-        )
+        data[column] = data[column].astype(float)
 
     # --------------------------------------------------------
     # INDICATORS
     # --------------------------------------------------------
 
-    data["EMA20"] = calculate_ema(
-        data,
-        20,
-    )
-
-    data["EMA50"] = calculate_ema(
-        data,
-        50,
-    )
-
-    data["EMA200"] = calculate_ema(
-        data,
-        200,
-    )
-
-    data["RSI14"] = calculate_rsi(
-    data,
-    14,
-)
-
-    data["ADX14"] = calculate_adx(
-        data,
-        14,
-    )
+    data["EMA20"] = calculate_ema(data, 20)
+    data["EMA50"] = calculate_ema(data, 50)
+    data["EMA200"] = calculate_ema(data, 200)
+    data["RSI14"] = calculate_rsi(data, 14)
+    data["ADX14"] = calculate_adx(data, 14)
+    data["ATR14"] = calculate_atr(data, 14)
 
     data["VOLUME_AVG"] = (
         data["volume"]
-        .rolling(
-            settings.volume_average_period
-        )
+        .rolling(settings.volume_average_period)
         .mean()
     )
 
     data["VolumeSMA20"] = data["VOLUME_AVG"]
 
-    data = data.dropna().reset_index(
-        drop=True
-    )
+    data = data.dropna().reset_index(drop=True)
 
     if len(data) < 2:
-        raise ValueError(
-            "Not enough candles after indicator calculation."
-        )
+        raise ValueError("Not enough candles after indicator calculation.")
 
     # --------------------------------------------------------
     # PORTFOLIO STATE
     # --------------------------------------------------------
 
-    cash_balance = float(
-        settings.starting_capital
-    )
-
+    cash_balance = float(settings.starting_capital)
     position_open = False
-
     quantity = 0.0
-
     entry_price = 0.0
-
     entry_time = None
-
     entry_notional = 0.0
-
     entry_total_cost = 0.0
-
     entry_buy_fee = 0.0
-
     entry_risk_amount = 0.0
-
     entry_risk_percent = 0.0
-
+    highest_price = 0.0
+    break_even_active = False
     recovery_trade_open = False
 
     # --------------------------------------------------------
@@ -326,12 +297,9 @@ def run_backtest() -> None:
     # --------------------------------------------------------
 
     trade_history: list[dict] = []
-
     equity_history: list[float] = []
-
     winning_trades = 0
     losing_trades = 0
-
     daily_profit_lock_hits = 0
     daily_loss_hits = 0
     weekly_stop_hits = 0
@@ -353,7 +321,6 @@ def run_backtest() -> None:
         close_time,
         exit_reason: str,
     ) -> None:
-
         nonlocal cash_balance
         nonlocal position_open
         nonlocal quantity
@@ -364,6 +331,8 @@ def run_backtest() -> None:
         nonlocal entry_buy_fee
         nonlocal entry_risk_amount
         nonlocal entry_risk_percent
+        nonlocal highest_price
+        nonlocal break_even_active
         nonlocal recovery_trade_open
         nonlocal winning_trades
         nonlocal losing_trades
@@ -371,36 +340,20 @@ def run_backtest() -> None:
         if not position_open:
             return
 
-        sell_price = apply_sell_slippage(
-            market_exit_price
-        )
+        sell_price = apply_sell_slippage(market_exit_price)
 
-        gross_sell_value = (
-            quantity
-            * sell_price
-        )
+        gross_sell_value = quantity * sell_price
 
-        sell_fee = calculate_fee(
-            gross_sell_value
-        )
+        sell_fee = calculate_fee(gross_sell_value)
 
-        net_sell_value = (
-            gross_sell_value
-            - sell_fee
-        )
+        net_sell_value = gross_sell_value - sell_fee
 
         cash_balance += net_sell_value
 
-        profit = (
-            net_sell_value
-            - entry_total_cost
-        )
+        profit = net_sell_value - entry_total_cost
 
         if entry_total_cost > 0:
-            profit_percent = (
-                profit
-                / entry_total_cost
-            ) * 100
+            profit_percent = (profit / entry_total_cost) * 100
         else:
             profit_percent = 0.0
 
@@ -409,65 +362,26 @@ def run_backtest() -> None:
         else:
             losing_trades += 1
 
-        trade_type = (
-            "RECOVERY"
-            if recovery_trade_open
-            else "NORMAL"
-        )
+        trade_type = "RECOVERY" if recovery_trade_open else "NORMAL"
 
         trade_history.append(
             {
-                "trade_number": (
-                    len(trade_history) + 1
-                ),
+                "trade_number": len(trade_history) + 1,
                 "trade_type": trade_type,
                 "buy_time": entry_time,
                 "sell_time": close_time,
-                "buy_price": round(
-                    entry_price,
-                    8,
-                ),
-                "sell_price": round(
-                    sell_price,
-                    8,
-                ),
-                "quantity": round(
-                    quantity,
-                    8,
-                ),
-                "notional": round(
-                    entry_notional,
-                    8,
-                ),
-                "risk_amount": round(
-                    entry_risk_amount,
-                    8,
-                ),
-                "risk_percent": round(
-                    entry_risk_percent,
-                    4,
-                ),
-                "buy_fee": round(
-                    entry_buy_fee,
-                    8,
-                ),
-                "sell_fee": round(
-                    sell_fee,
-                    8,
-                ),
-                "profit": round(
-                    profit,
-                    8,
-                ),
-                "profit_percent": round(
-                    profit_percent,
-                    4,
-                ),
+                "buy_price": round(entry_price, 8),
+                "sell_price": round(sell_price, 8),
+                "quantity": round(quantity, 8),
+                "notional": round(entry_notional, 8),
+                "risk_amount": round(entry_risk_amount, 8),
+                "risk_percent": round(entry_risk_percent, 4),
+                "buy_fee": round(entry_buy_fee, 8),
+                "sell_fee": round(sell_fee, 8),
+                "profit": round(profit, 8),
+                "profit_percent": round(profit_percent, 4),
                 "exit_reason": exit_reason,
-                "balance_after_trade": round(
-                    cash_balance,
-                    8,
-                ),
+                "balance_after_trade": round(cash_balance, 8),
             }
         )
 
@@ -480,7 +394,6 @@ def run_backtest() -> None:
         )
 
         position_open = False
-
         quantity = 0.0
         entry_price = 0.0
         entry_time = None
@@ -489,6 +402,8 @@ def run_backtest() -> None:
         entry_buy_fee = 0.0
         entry_risk_amount = 0.0
         entry_risk_percent = 0.0
+        highest_price = 0.0
+        break_even_active = False
         recovery_trade_open = False
 
         risk_manager.register_trade_exit()
@@ -497,25 +412,12 @@ def run_backtest() -> None:
     # MAIN LOOP
     # --------------------------------------------------------
 
-    for index in range(
-        len(data)
-    ):
-
+    for index in range(len(data)):
         candle = data.iloc[index]
-
         candle_time = candle["open_time"]
-
-        close_price = float(
-            candle["close"]
-        )
-
-        candle_high = float(
-            candle["high"]
-        )
-
-        candle_low = float(
-            candle["low"]
-        )
+        close_price = float(candle["close"])
+        candle_high = float(candle["high"])
+        candle_low = float(candle["low"])
 
         current_equity = calculate_equity(
             cash_balance=cash_balance,
@@ -529,9 +431,7 @@ def run_backtest() -> None:
             current_equity=current_equity,
         )
 
-        equity_history.append(
-            current_equity
-        )
+        equity_history.append(current_equity)
 
         risk_manager.process_candle_cooldown()
 
@@ -539,25 +439,15 @@ def run_backtest() -> None:
         # PROFIT EXTENSION TRAILING CHECK
         # ----------------------------------------------------
 
-        if (
-            position_open
-            and risk_manager.mode
-            == TradingMode.PROFIT_LOCK
-        ):
-            extension_exit = (
-                risk_manager.update_profit_extension(
-                    current_equity
-                )
-            )
+        if position_open and risk_manager.mode == TradingMode.PROFIT_LOCK:
+            extension_exit = risk_manager.update_profit_extension(current_equity)
 
             if extension_exit is not None:
-
                 close_position(
                     market_exit_price=close_price,
                     close_time=candle_time,
                     exit_reason=extension_exit,
                 )
-
                 continue
 
         # ----------------------------------------------------
@@ -566,45 +456,25 @@ def run_backtest() -> None:
 
         previous_mode = risk_manager.mode
 
-        account_reason = (
-            risk_manager.evaluate_account_limits(
-                current_equity=current_equity,
-                position_open=position_open,
-            )
+        account_reason = risk_manager.evaluate_account_limits(
+            current_equity=current_equity,
+            position_open=position_open,
         )
 
-        if (
-            previous_mode
-            != risk_manager.mode
-        ):
+        if previous_mode != risk_manager.mode:
             print(
                 f"{candle_time} | "
                 f"MODE: {risk_manager.mode.value} | "
                 f"{risk_manager.mode_reason}"
             )
 
-            if (
-                risk_manager.mode
-                == TradingMode.PROFIT_LOCK
-            ):
+            if risk_manager.mode == TradingMode.PROFIT_LOCK:
                 daily_profit_lock_hits += 1
-
-            elif (
-                risk_manager.mode
-                == TradingMode.RECOVERY_WATCH
-            ):
+            elif risk_manager.mode == TradingMode.RECOVERY_WATCH:
                 daily_loss_hits += 1
-
-            elif (
-                risk_manager.mode
-                == TradingMode.WEEKLY_STOP
-            ):
+            elif risk_manager.mode == TradingMode.WEEKLY_STOP:
                 weekly_stop_hits += 1
-
-            elif (
-                risk_manager.mode
-                == TradingMode.HARD_LOCK
-            ):
+            elif risk_manager.mode == TradingMode.HARD_LOCK:
                 hard_lock_hits += 1
 
         # ----------------------------------------------------
@@ -619,7 +489,6 @@ def run_backtest() -> None:
             TradingMode.RECOVERY_WATCH,
         }:
             if position_open:
-
                 close_position(
                     market_exit_price=close_price,
                     close_time=candle_time,
@@ -629,36 +498,17 @@ def run_backtest() -> None:
             if risk_manager.mode == TradingMode.HARD_LOCK:
                 break
 
-        # ----------------------------------------------------
-        # PROFIT LOCK:
-        # Existing trade continues.
-        # No new trade.
-        # ----------------------------------------------------
-
-        if (
-            risk_manager.mode
-            == TradingMode.PROFIT_LOCK
-        ):
+        if risk_manager.mode == TradingMode.PROFIT_LOCK:
             continue
 
         # ----------------------------------------------------
         # RECOVERY WATCH
         # ----------------------------------------------------
 
-        if (
-            risk_manager.mode
-            == TradingMode.RECOVERY_WATCH
-        ):
-            recovery_score = (
-                risk_manager.update_recovery_watch(
-                    candle
-                )
-            )
+        if risk_manager.mode == TradingMode.RECOVERY_WATCH:
+            recovery_score = risk_manager.update_recovery_watch(candle)
 
-            if (
-                recovery_score
-                >= settings.recovery_score_required
-            ):
+            if recovery_score >= settings.recovery_score_required:
                 recovery_setup_detections += 1
 
                 print(
@@ -673,38 +523,25 @@ def run_backtest() -> None:
             if not risk_manager.can_open_recovery_trade():
                 continue
 
-            signal = (
-                EmaRsiStrategyV2.generate_signal(candle)
-                )
-            
+            signal = EmaRsiStrategyV2.generate_signal(candle)
 
             if signal != "BUY":
                 continue
 
-            buy_price = apply_buy_slippage(
-                close_price
+            buy_price = apply_buy_slippage(close_price)
+
+            plan = risk_manager.calculate_position_plan(
+                current_equity=current_equity,
+                available_cash=cash_balance,
+                entry_price=buy_price,
+                recovery_trade=True,
             )
 
-            plan = (
-                risk_manager.calculate_position_plan(
-                    current_equity=current_equity,
-                    available_cash=cash_balance,
-                    entry_price=buy_price,
-                    recovery_trade=True,
-                )
-            )
+            buy_fee = calculate_fee(plan.notional)
 
-            buy_fee = calculate_fee(
-                plan.notional
-            )
-
-            total_required = (
-                plan.notional
-                + buy_fee
-            )
+            total_required = plan.notional + buy_fee
 
             if total_required > cash_balance:
-
                 adjusted_notional = (
                     cash_balance
                     / (
@@ -714,23 +551,12 @@ def run_backtest() -> None:
                     )
                 )
 
-                plan.quantity = (
-                    adjusted_notional
-                    / buy_price
-                )
+                plan.quantity = adjusted_notional / buy_price
+                plan.notional = adjusted_notional
 
-                plan.notional = (
-                    adjusted_notional
-                )
+                buy_fee = calculate_fee(adjusted_notional)
 
-                buy_fee = calculate_fee(
-                    adjusted_notional
-                )
-
-                total_required = (
-                    adjusted_notional
-                    + buy_fee
-                )
+                total_required = adjusted_notional + buy_fee
 
             if plan.quantity <= 0:
                 continue
@@ -738,28 +564,22 @@ def run_backtest() -> None:
             cash_balance -= total_required
 
             position_open = True
-
             quantity = plan.quantity
             entry_price = buy_price
             entry_time = candle_time
+            highest_price = entry_price
+            break_even_active = False
 
             entry_notional = plan.notional
             entry_buy_fee = buy_fee
-
             entry_total_cost = total_required
-
             entry_risk_amount = plan.risk_amount
-            entry_risk_percent = (
-                plan.risk_percent_used
-            )
+            entry_risk_percent = plan.risk_percent_used
 
             recovery_trade_open = True
-
             recovery_trades += 1
 
-            risk_manager.register_trade_entry(
-                recovery_trade=True
-            )
+            risk_manager.register_trade_entry(recovery_trade=True)
 
             print(
                 f"{candle_time} | "
@@ -775,42 +595,47 @@ def run_backtest() -> None:
         # ----------------------------------------------------
 
         if position_open:
+            highest_price = max(highest_price, candle_high)
 
-            price_exit = (
-                risk_manager.check_position_exit(
-                    entry_price=entry_price,
-                    candle_low=candle_low,
-                    candle_high=candle_high,
-                )
+            price_exit = risk_manager.check_position_exit(
+                entry_price=entry_price,
+                candle_low=candle_low,
+                candle_high=candle_high,
+
             )
 
-            if price_exit is not None:
+            atr = float(candle["ATR14"])
 
-                exit_reason, exit_price = (
-                    price_exit
+            if close_price >= entry_price * 1.01:
+                break_even_active = True
+
+            trailing_stop = highest_price - (atr * 2)
+
+            if break_even_active and close_price < trailing_stop:
+                close_position(
+                    market_exit_price=close_price,
+                    close_time=candle_time,
+                    exit_reason="ATR TRAILING",
                 )
+                continue
 
+            if price_exit is not None:
+                exit_reason, exit_price = price_exit
                 close_position(
                     market_exit_price=exit_price,
                     close_time=candle_time,
                     exit_reason=exit_reason,
                 )
-
                 continue
 
-            strategy_signal = (
-                EmaRsiStrategyV2.generate_signal(candle)
-                )
-            
+            strategy_signal = EmaRsiStrategyV2.generate_signal(candle)
 
             if strategy_signal == "SELL":
-
                 close_position(
                     market_exit_price=close_price,
                     close_time=candle_time,
                     exit_reason="STRATEGY SELL",
                 )
-
                 continue
 
         # ----------------------------------------------------
@@ -820,22 +645,15 @@ def run_backtest() -> None:
         if position_open:
             continue
 
-        if not risk_manager.can_open_normal_trade(
-            candle
-        ):
+        if not risk_manager.can_open_normal_trade(candle):
             continue
 
-        signal = (
-            EmaRsiStrategyV2.generate_signal(candle)
-            )
-
+        signal = EmaRsiStrategyV2.generate_signal(candle)
 
         if signal != "BUY":
             continue
 
-        buy_price = apply_buy_slippage(
-            close_price
-        )
+        buy_price = apply_buy_slippage(close_price)
 
         current_equity = calculate_equity(
             cash_balance=cash_balance,
@@ -844,26 +662,18 @@ def run_backtest() -> None:
             market_price=close_price,
         )
 
-        plan = (
-            risk_manager.calculate_position_plan(
-                current_equity=current_equity,
-                available_cash=cash_balance,
-                entry_price=buy_price,
-                recovery_trade=False,
-            )
+        plan = risk_manager.calculate_position_plan(
+            current_equity=current_equity,
+            available_cash=cash_balance,
+            entry_price=buy_price,
+            recovery_trade=False,
         )
 
-        buy_fee = calculate_fee(
-            plan.notional
-        )
+        buy_fee = calculate_fee(plan.notional)
 
-        total_required = (
-            plan.notional
-            + buy_fee
-        )
+        total_required = plan.notional + buy_fee
 
         if total_required > cash_balance:
-
             adjusted_notional = (
                 cash_balance
                 / (
@@ -873,23 +683,11 @@ def run_backtest() -> None:
                 )
             )
 
-            plan.quantity = (
-                adjusted_notional
-                / buy_price
-            )
+            plan.quantity = adjusted_notional / buy_price
+            plan.notional = adjusted_notional
 
-            plan.notional = (
-                adjusted_notional
-            )
-
-            buy_fee = calculate_fee(
-                adjusted_notional
-            )
-
-            total_required = (
-                adjusted_notional
-                + buy_fee
-            )
+            buy_fee = calculate_fee(adjusted_notional)
+            total_required = adjusted_notional + buy_fee
 
         if plan.quantity <= 0:
             continue
@@ -897,26 +695,21 @@ def run_backtest() -> None:
         cash_balance -= total_required
 
         position_open = True
-
         quantity = plan.quantity
         entry_price = buy_price
         entry_time = candle_time
+        highest_price = entry_price
+        break_even_active = False
 
         entry_notional = plan.notional
         entry_buy_fee = buy_fee
-
         entry_total_cost = total_required
-
         entry_risk_amount = plan.risk_amount
-        entry_risk_percent = (
-            plan.risk_percent_used
-        )
+        entry_risk_percent = plan.risk_percent_used
 
         recovery_trade_open = False
 
-        risk_manager.register_trade_entry(
-            recovery_trade=False
-        )
+        risk_manager.register_trade_entry(recovery_trade=False)
 
         print(
             f"{candle_time} | "
@@ -933,16 +726,10 @@ def run_backtest() -> None:
 
     final_candle = data.iloc[-1]
 
-    final_price = float(
-        final_candle["close"]
-    )
-
-    final_time = final_candle[
-        "open_time"
-    ]
+    final_price = float(final_candle["close"])
+    final_time = final_candle["open_time"]
 
     if position_open:
-
         close_position(
             market_exit_price=final_price,
             close_time=final_time,
@@ -954,40 +741,18 @@ def run_backtest() -> None:
     # --------------------------------------------------------
 
     final_balance = cash_balance
-
-    total_profit = (
-        final_balance
-        - settings.starting_capital
-    )
-
-    roi_percent = (
-        total_profit
-        / settings.starting_capital
-    ) * 100
-
-    completed_trades = len(
-        trade_history
-    )
+    total_profit = final_balance - settings.starting_capital
+    roi_percent = (total_profit / settings.starting_capital) * 100
+    completed_trades = len(trade_history)
 
     if completed_trades > 0:
-
-        win_rate = (
-            winning_trades
-            / completed_trades
-        ) * 100
-
+        win_rate = (winning_trades / completed_trades) * 100
     else:
         win_rate = 0.0
 
-    maximum_drawdown = (
-        calculate_max_drawdown(
-            equity_history
-        )
-    )
+    maximum_drawdown = calculate_max_drawdown(equity_history)
 
-    status = risk_manager.status_report(
-        final_balance
-    )
+    status = risk_manager.status_report(final_balance)
 
     print()
     print("=" * 95)
@@ -998,91 +763,75 @@ def run_backtest() -> None:
         f"Starting Capital          : "
         f"€{settings.starting_capital:.2f}"
     )
-
     print(
         f"Final Balance             : "
         f"€{final_balance:.2f}"
     )
-
     print(
         f"Total Profit/Loss         : "
         f"€{total_profit:.2f}"
     )
-
     print(
         f"ROI                       : "
         f"{roi_percent:.2f}%"
     )
-
     print(
         f"Completed Trades          : "
         f"{completed_trades}"
     )
-
     print(
         f"Winning Trades            : "
         f"{winning_trades}"
     )
-
     print(
         f"Losing Trades             : "
         f"{losing_trades}"
     )
-
     print(
         f"Win Rate                  : "
         f"{win_rate:.2f}%"
     )
-
     print(
         f"Maximum Drawdown          : "
         f"{maximum_drawdown:.2f}%"
     )
-
     print(
         f"Daily Profit Locks        : "
         f"{daily_profit_lock_hits}"
     )
-
     print(
         f"Daily Loss Circuits       : "
         f"{daily_loss_hits}"
     )
-
     print(
         f"Weekly Stops              : "
         f"{weekly_stop_hits}"
     )
-
     print(
         f"Hard Locks                : "
         f"{hard_lock_hits}"
     )
-
     print(
         f"Recovery Setups           : "
         f"{recovery_setup_detections}"
     )
-
     print(
         f"Recovery Trades           : "
         f"{recovery_trades}"
     )
-
     print(
         f"Final Engine Mode         : "
         f"{status['mode']}"
     )
-
     print(
         f"Final Mode Reason         : "
         f"{status['reason']}"
     )
-
     print("=" * 95)
 
     export_trade_history(
-        trade_history
+        trade_history,
+        csv_file,
     )
 
 
