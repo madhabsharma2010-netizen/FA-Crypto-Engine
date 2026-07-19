@@ -1,7 +1,7 @@
 from binance.client import Client
 import pandas as pd
 
-from core.indicators import calculate_ema, calculate_rsi, generate_signal
+from core.indicators import calculate_ema, calculate_rsi
 
 
 client = Client()

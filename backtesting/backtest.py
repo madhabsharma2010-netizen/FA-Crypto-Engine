@@ -5,10 +5,15 @@ from typing import Optional
 from binance.client import Client
 
 from config.risk_settings import RISK_SETTINGS
-from core.indicators import calculate_ema, calculate_rsi
+from core.indicators import (
+    calculate_ema,
+    calculate_rsi,
+    calculate_adx,
+)
 from core.risk_manager import RiskManager, TradingMode
 from market.historical_data import get_historical_candles
-from strategies.ema_rsi_strategy import EmaRsiStrategy
+from strategies.ema_rsi_strategy_v2 import EmaRsiStrategyV2 
+
 
 
 # ============================================================
@@ -260,6 +265,11 @@ def run_backtest() -> None:
     )
 
     data["RSI14"] = calculate_rsi(
+    data,
+    14,
+)
+
+    data["ADX14"] = calculate_adx(
         data,
         14,
     )
@@ -271,6 +281,8 @@ def run_backtest() -> None:
         )
         .mean()
     )
+
+    data["VolumeSMA20"] = data["VOLUME_AVG"]
 
     data = data.dropna().reset_index(
         drop=True
@@ -662,10 +674,9 @@ def run_backtest() -> None:
                 continue
 
             signal = (
-                EmaRsiStrategy.generate_signal(
-                    candle
+                EmaRsiStrategyV2.generate_signal(candle)
                 )
-            )
+            
 
             if signal != "BUY":
                 continue
@@ -788,10 +799,9 @@ def run_backtest() -> None:
                 continue
 
             strategy_signal = (
-                EmaRsiStrategy.generate_signal(
-                    candle
+                EmaRsiStrategyV2.generate_signal(candle)
                 )
-            )
+            
 
             if strategy_signal == "SELL":
 
@@ -816,10 +826,9 @@ def run_backtest() -> None:
             continue
 
         signal = (
-            EmaRsiStrategy.generate_signal(
-                candle
+            EmaRsiStrategyV2.generate_signal(candle)
             )
-        )
+
 
         if signal != "BUY":
             continue

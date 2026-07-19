@@ -1,32 +1,23 @@
+import numpy as np
 import pandas as pd
-def calculate_ema(dataframe: pd.DataFrame,period: int, column: str = "close") -> pd.Series:
+def calculate_ema(
+    dataframe: pd.DataFrame,
+    period: int,
+    column: str = "close",
+) -> pd.Series:
     """
-    Exponential Moving Average (EMA) calculate karta hai.
+    Exponential Moving Average calculate karta hai.
     """
-    return dataframe[column].ewm(span=period, adjust=False).mean()
+    return dataframe[column].ewm(
+        span=period,
+        adjust=False,
+    ).mean()
 
 
-def generate_signal(dataframe):
-    """
-    EMA20 aur EMA50 ke basis par signal generate karta hai.
-    """
-
-    latest = dataframe.iloc[-1]
-
-    ema20 = latest["EMA20"]
-    ema50 = latest["EMA50"]
-    rsi = latest["RSI14"]
-
-
-    if ema20 > ema50 and rsi < 70:
-        return "BUY"
-
-    elif ema20 < ema50 and rsi > 30:
-        return "SELL"
-
-    return "HOLD"
-
-def calculate_rsi(dataframe, period=14):
+def calculate_rsi(
+    dataframe: pd.DataFrame,
+    period: int = 14,
+) -> pd.Series:
     """
     Close prices ke basis par RSI calculate karta hai.
     """
@@ -48,8 +39,112 @@ def calculate_rsi(dataframe, period=14):
         min_periods=period,
     ).mean()
 
-    relative_strength = average_gain / average_loss
+    relative_strength = average_gain / average_loss.replace(0, np.nan)
 
-    rsi = 100 - (100 / (1 + relative_strength))
+    rsi = 100 - (
+        100 / (1 + relative_strength)
+    )
 
     return rsi
+
+
+def calculate_volume_sma(
+    dataframe: pd.DataFrame,
+    period: int = 20,
+) -> pd.Series:
+    """
+    Trading volume ka simple moving average calculate karta hai.
+    """
+    return dataframe["volume"].rolling(
+        window=period,
+        min_periods=period,
+    ).mean()
+
+
+def calculate_adx(
+    dataframe: pd.DataFrame,
+    period: int = 14,
+) -> pd.Series:
+    """
+    Average Directional Index calculate karta hai.
+    """
+
+    high = dataframe["high"]
+    low = dataframe["low"]
+    close = dataframe["close"]
+
+    high_change = high.diff()
+    low_change = -low.diff()
+
+    plus_dm = pd.Series(
+        np.where(
+            (high_change > low_change)
+            & (high_change > 0),
+            high_change,
+            0.0,
+        ),
+        index=dataframe.index,
+    )
+
+    minus_dm = pd.Series(
+        np.where(
+            (low_change > high_change)
+            & (low_change > 0),
+            low_change,
+            0.0,
+        ),
+        index=dataframe.index,
+    )
+
+    true_range = pd.concat(
+        [
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low - close.shift(1)).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    atr = true_range.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
+    smoothed_plus_dm = plus_dm.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
+    smoothed_minus_dm = minus_dm.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
+    plus_di = 100 * (
+        smoothed_plus_dm / atr.replace(0, np.nan)
+    )
+
+    minus_di = 100 * (
+        smoothed_minus_dm / atr.replace(0, np.nan)
+    )
+
+    directional_sum = (
+        plus_di + minus_di
+    ).replace(0, np.nan)
+
+    dx = (
+        100
+        * (plus_di - minus_di).abs()
+        / directional_sum
+    )
+
+    adx = dx.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
+    return adx
