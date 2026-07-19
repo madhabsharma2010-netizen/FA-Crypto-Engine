@@ -833,7 +833,40 @@ def run_backtest(
         trade_history,
         csv_file,
     )
-
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "candle_limit": candle_limit,
+        "starting_capital": settings.starting_capital,
+        "final_balance": final_balance,
+        "total_profit": total_profit,
+        "roi_percent": roi_percent,
+        "completed_trades": completed_trades,
+        "winning_trades": winning_trades,
+        "losing_trades": losing_trades,
+        "win_rate": win_rate,
+        "maximum_drawdown": maximum_drawdown,
+        "final_mode": str(status["mode"]),
+        "final_reason": status["reason"],
+        "csv_file": csv_file,
+    }
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "candle_limit": candle_limit,
+        "starting_capital": settings.starting_capital,
+        "final_balance": final_balance,
+        "total_profit": total_profit,
+        "roi_percent": roi_percent,
+        "completed_trades": completed_trades,
+        "winning_trades": winning_trades,
+        "losing_trades": losing_trades,
+        "win_rate": win_rate,
+        "maximum_drawdown": maximum_drawdown,
+        "final_mode": str(status["mode"]),
+        "final_reason": str(status["reason"]),
+        "csv_file": csv_file,
+    }
 
 # ============================================================
 # PROGRAM ENTRY
