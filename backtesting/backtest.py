@@ -1,20 +1,19 @@
 import csv
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 from binance.client import Client
 
 from config.risk_settings import RISK_SETTINGS
 from core.indicators import (
-    calculate_ema,
-    calculate_rsi,
     calculate_adx,
     calculate_atr,
+    calculate_ema,
+    calculate_rsi,
 )
 from core.risk_manager import RiskManager, TradingMode
 from market.historical_data import get_historical_candles
-from strategies.ema_rsi_strategy_v2 import EmaRsiStrategyV2 
-
+from strategies.ema_rsi_strategy_v2 import EmaRsiStrategyV2
 
 
 # ============================================================
@@ -22,10 +21,11 @@ from strategies.ema_rsi_strategy_v2 import EmaRsiStrategyV2
 # ============================================================
 
 SYMBOL = "BTCUSDT"
-
 INTERVAL = Client.KLINE_INTERVAL_1HOUR
-
 CANDLE_LIMIT = 1000
+
+BACKTEST_START = "2026-05-01 00:00:00"
+BACKTEST_END = "2026-07-20 00:00:00"
 
 CSV_FILE = "logs/backtest_trade_history.csv"
 
@@ -34,10 +34,8 @@ CSV_FILE = "logs/backtest_trade_history.csv"
 # HELPER FUNCTIONS
 # ============================================================
 
-def calculate_fee(
-    amount: float,
-) -> float:
 
+def calculate_fee(amount: float) -> float:
     return (
         amount
         * RISK_SETTINGS.trading_fee_percent
@@ -45,31 +43,19 @@ def calculate_fee(
     )
 
 
-def apply_buy_slippage(
-    market_price: float,
-) -> float:
-
-    return (
-        market_price
-        * (
-            1
-            + RISK_SETTINGS.estimated_slippage_percent
-            / 100
-        )
+def apply_buy_slippage(market_price: float) -> float:
+    return market_price * (
+        1
+        + RISK_SETTINGS.estimated_slippage_percent
+        / 100
     )
 
 
-def apply_sell_slippage(
-    market_price: float,
-) -> float:
-
-    return (
-        market_price
-        * (
-            1
-            - RISK_SETTINGS.estimated_slippage_percent
-            / 100
-        )
+def apply_sell_slippage(market_price: float) -> float:
+    return market_price * (
+        1
+        - RISK_SETTINGS.estimated_slippage_percent
+        / 100
     )
 
 
@@ -79,29 +65,22 @@ def calculate_equity(
     quantity: float,
     market_price: float,
 ) -> float:
-
     if not position_open:
         return cash_balance
 
-    return (
-        cash_balance
-        + quantity * market_price
-    )
+    return cash_balance + quantity * market_price
 
 
 def calculate_max_drawdown(
     equity_history: list[float],
 ) -> float:
-
     if not equity_history:
         return 0.0
 
     peak_equity = equity_history[0]
-
     maximum_drawdown = 0.0
 
     for equity in equity_history:
-
         if equity > peak_equity:
             peak_equity = equity
 
@@ -122,17 +101,14 @@ def calculate_max_drawdown(
 
 
 def export_trade_history(
-    trade_history: list[dict],
+    trade_history: list[dict[str, Any]],
     csv_file: str,
 ) -> None:
-
     if not trade_history:
         print("No completed trades available.")
         return
 
     file_path = Path(csv_file)
-
-
     file_path.parent.mkdir(
         parents=True,
         exist_ok=True,
@@ -161,57 +137,45 @@ def export_trade_history(
         mode="w",
         newline="",
         encoding="utf-8",
-    ) as csv_file:
-
+    ) as output_file:
         writer = csv.DictWriter(
-            csv_file,
+            output_file,
             fieldnames=fieldnames,
         )
-
         writer.writeheader()
+        writer.writerows(trade_history)
 
-        writer.writerows(
-            trade_history
-        )
-
-    print(
-        f"Trade history saved to: {file_path}"
-    )
+    print(f"Trade history saved to: {file_path}")
 
 
 # ============================================================
 # BACKTEST ENGINE
 # ============================================================
 
+
 def run_backtest(
     symbol: str = SYMBOL,
     interval: str = INTERVAL,
     candle_limit: int = CANDLE_LIMIT,
     csv_file: str = CSV_FILE,
-) -> None:
-
+    start_time: str | None = BACKTEST_START,
+    end_time: str | None = BACKTEST_END,
+) -> dict[str, Any]:
     settings = RISK_SETTINGS
-
     settings.validate()
 
     print("=" * 95)
     print("FA CRYPTO ENGINE — CAPITAL PRESERVATION BACKTEST")
     print("=" * 95)
-
     print(
         f"Master Control             : "
         f"{settings.engine_control}"
     )
 
     if settings.engine_control == "STOP":
-        print("Engine manually stopped.")
-        return
+        raise RuntimeError("Engine manually stopped.")
 
     # --------------------------------------------------------
-    # LOAD DATA
-    # --------------------------------------------------------
-
-# --------------------------------------------------------
     # LOAD DATA
     # --------------------------------------------------------
 
@@ -219,6 +183,9 @@ def run_backtest(
         symbol=symbol,
         interval=interval,
         limit=candle_limit,
+        start_time=start_time,
+        end_time=end_time,
+        drop_incomplete=True,
     )
 
     if data.empty:
@@ -236,7 +203,7 @@ def run_backtest(
 
     if missing_columns:
         raise ValueError(
-            f"Historical data missing columns: "
+            "Historical data missing columns: "
             f"{sorted(missing_columns)}"
         )
 
@@ -266,13 +233,14 @@ def run_backtest(
         .rolling(settings.volume_average_period)
         .mean()
     )
-
     data["VolumeSMA20"] = data["VOLUME_AVG"]
 
     data = data.dropna().reset_index(drop=True)
 
     if len(data) < 2:
-        raise ValueError("Not enough candles after indicator calculation.")
+        raise ValueError(
+            "Not enough candles after indicator calculation."
+        )
 
     # --------------------------------------------------------
     # PORTFOLIO STATE
@@ -280,6 +248,7 @@ def run_backtest(
 
     cash_balance = float(settings.starting_capital)
     position_open = False
+
     quantity = 0.0
     entry_price = 0.0
     entry_time = None
@@ -288,6 +257,7 @@ def run_backtest(
     entry_buy_fee = 0.0
     entry_risk_amount = 0.0
     entry_risk_percent = 0.0
+
     highest_price = 0.0
     break_even_active = False
     recovery_trade_open = False
@@ -296,10 +266,12 @@ def run_backtest(
     # PERFORMANCE STATE
     # --------------------------------------------------------
 
-    trade_history: list[dict] = []
+    trade_history: list[dict[str, Any]] = []
     equity_history: list[float] = []
+
     winning_trades = 0
     losing_trades = 0
+
     daily_profit_lock_hits = 0
     daily_loss_hits = 0
     weekly_stop_hits = 0
@@ -318,7 +290,7 @@ def run_backtest(
 
     def close_position(
         market_exit_price: float,
-        close_time,
+        close_time: Any,
         exit_reason: str,
     ) -> None:
         nonlocal cash_balance
@@ -340,12 +312,12 @@ def run_backtest(
         if not position_open:
             return
 
-        sell_price = apply_sell_slippage(market_exit_price)
+        sell_price = apply_sell_slippage(
+            market_exit_price
+        )
 
         gross_sell_value = quantity * sell_price
-
         sell_fee = calculate_fee(gross_sell_value)
-
         net_sell_value = gross_sell_value - sell_fee
 
         cash_balance += net_sell_value
@@ -353,7 +325,10 @@ def run_backtest(
         profit = net_sell_value - entry_total_cost
 
         if entry_total_cost > 0:
-            profit_percent = (profit / entry_total_cost) * 100
+            profit_percent = (
+                profit
+                / entry_total_cost
+            ) * 100
         else:
             profit_percent = 0.0
 
@@ -362,7 +337,11 @@ def run_backtest(
         else:
             losing_trades += 1
 
-        trade_type = "RECOVERY" if recovery_trade_open else "NORMAL"
+        trade_type = (
+            "RECOVERY"
+            if recovery_trade_open
+            else "NORMAL"
+        )
 
         trade_history.append(
             {
@@ -414,6 +393,7 @@ def run_backtest(
 
     for index in range(len(data)):
         candle = data.iloc[index]
+
         candle_time = candle["open_time"]
         close_price = float(candle["close"])
         candle_high = float(candle["high"])
@@ -432,15 +412,22 @@ def run_backtest(
         )
 
         equity_history.append(current_equity)
-
         risk_manager.process_candle_cooldown()
 
         # ----------------------------------------------------
         # PROFIT EXTENSION TRAILING CHECK
         # ----------------------------------------------------
 
-        if position_open and risk_manager.mode == TradingMode.PROFIT_LOCK:
-            extension_exit = risk_manager.update_profit_extension(current_equity)
+        if (
+            position_open
+            and risk_manager.mode
+            == TradingMode.PROFIT_LOCK
+        ):
+            extension_exit = (
+                risk_manager.update_profit_extension(
+                    current_equity
+                )
+            )
 
             if extension_exit is not None:
                 close_position(
@@ -456,7 +443,7 @@ def run_backtest(
 
         previous_mode = risk_manager.mode
 
-        account_reason = risk_manager.evaluate_account_limits(
+        risk_manager.evaluate_account_limits(
             current_equity=current_equity,
             position_open=position_open,
         )
@@ -498,6 +485,10 @@ def run_backtest(
             if risk_manager.mode == TradingMode.HARD_LOCK:
                 break
 
+        # ----------------------------------------------------
+        # PROFIT LOCK: NO NEW TRADE
+        # ----------------------------------------------------
+
         if risk_manager.mode == TradingMode.PROFIT_LOCK:
             continue
 
@@ -506,9 +497,14 @@ def run_backtest(
         # ----------------------------------------------------
 
         if risk_manager.mode == TradingMode.RECOVERY_WATCH:
-            recovery_score = risk_manager.update_recovery_watch(candle)
+            recovery_score = (
+                risk_manager.update_recovery_watch(candle)
+            )
 
-            if recovery_score >= settings.recovery_score_required:
+            if (
+                recovery_score
+                >= settings.recovery_score_required
+            ):
                 recovery_setup_detections += 1
 
                 print(
@@ -523,7 +519,13 @@ def run_backtest(
             if not risk_manager.can_open_recovery_trade():
                 continue
 
-            signal = EmaRsiStrategyV2.generate_signal(candle)
+            # Never open a new position on the final candle.
+            if index == len(data) - 1:
+                continue
+
+            signal = EmaRsiStrategyV2.generate_signal(
+                candle
+            )
 
             if signal != "BUY":
                 continue
@@ -538,25 +540,28 @@ def run_backtest(
             )
 
             buy_fee = calculate_fee(plan.notional)
-
             total_required = plan.notional + buy_fee
 
             if total_required > cash_balance:
-                adjusted_notional = (
-                    cash_balance
-                    / (
-                        1
-                        + settings.trading_fee_percent
-                        / 100
-                    )
+                adjusted_notional = cash_balance / (
+                    1
+                    + settings.trading_fee_percent
+                    / 100
                 )
 
-                plan.quantity = adjusted_notional / buy_price
+                plan.quantity = (
+                    adjusted_notional
+                    / buy_price
+                )
                 plan.notional = adjusted_notional
 
-                buy_fee = calculate_fee(adjusted_notional)
-
-                total_required = adjusted_notional + buy_fee
+                buy_fee = calculate_fee(
+                    adjusted_notional
+                )
+                total_required = (
+                    adjusted_notional
+                    + buy_fee
+                )
 
             if plan.quantity <= 0:
                 continue
@@ -579,7 +584,9 @@ def run_backtest(
             recovery_trade_open = True
             recovery_trades += 1
 
-            risk_manager.register_trade_entry(recovery_trade=True)
+            risk_manager.register_trade_entry(
+                recovery_trade=True
+            )
 
             print(
                 f"{candle_time} | "
@@ -595,13 +602,15 @@ def run_backtest(
         # ----------------------------------------------------
 
         if position_open:
-            highest_price = max(highest_price, candle_high)
+            highest_price = max(
+                highest_price,
+                candle_high,
+            )
 
             price_exit = risk_manager.check_position_exit(
                 entry_price=entry_price,
                 candle_low=candle_low,
                 candle_high=candle_high,
-
             )
 
             atr = float(candle["ATR14"])
@@ -611,7 +620,10 @@ def run_backtest(
 
             trailing_stop = highest_price - (atr * 2)
 
-            if break_even_active and close_price < trailing_stop:
+            if (
+                break_even_active
+                and close_price < trailing_stop
+            ):
                 close_position(
                     market_exit_price=close_price,
                     close_time=candle_time,
@@ -621,6 +633,7 @@ def run_backtest(
 
             if price_exit is not None:
                 exit_reason, exit_price = price_exit
+
                 close_position(
                     market_exit_price=exit_price,
                     close_time=candle_time,
@@ -628,7 +641,11 @@ def run_backtest(
                 )
                 continue
 
-            strategy_signal = EmaRsiStrategyV2.generate_signal(candle)
+            strategy_signal = (
+                EmaRsiStrategyV2.generate_signal(
+                    candle
+                )
+            )
 
             if strategy_signal == "SELL":
                 close_position(
@@ -646,6 +663,10 @@ def run_backtest(
             continue
 
         if not risk_manager.can_open_normal_trade(candle):
+            continue
+
+        # Never open a new position on the final candle.
+        if index == len(data) - 1:
             continue
 
         signal = EmaRsiStrategyV2.generate_signal(candle)
@@ -670,17 +691,13 @@ def run_backtest(
         )
 
         buy_fee = calculate_fee(plan.notional)
-
         total_required = plan.notional + buy_fee
 
         if total_required > cash_balance:
-            adjusted_notional = (
-                cash_balance
-                / (
-                    1
-                    + settings.trading_fee_percent
-                    / 100
-                )
+            adjusted_notional = cash_balance / (
+                1
+                + settings.trading_fee_percent
+                / 100
             )
 
             plan.quantity = adjusted_notional / buy_price
@@ -709,7 +726,9 @@ def run_backtest(
 
         recovery_trade_open = False
 
-        risk_manager.register_trade_entry(recovery_trade=False)
+        risk_manager.register_trade_entry(
+            recovery_trade=False
+        )
 
         print(
             f"{candle_time} | "
@@ -725,7 +744,6 @@ def run_backtest(
     # --------------------------------------------------------
 
     final_candle = data.iloc[-1]
-
     final_price = float(final_candle["close"])
     final_time = final_candle["open_time"]
 
@@ -741,24 +759,37 @@ def run_backtest(
     # --------------------------------------------------------
 
     final_balance = cash_balance
-    total_profit = final_balance - settings.starting_capital
-    roi_percent = (total_profit / settings.starting_capital) * 100
+    total_profit = (
+        final_balance
+        - settings.starting_capital
+    )
+    roi_percent = (
+        total_profit
+        / settings.starting_capital
+    ) * 100
+
     completed_trades = len(trade_history)
 
     if completed_trades > 0:
-        win_rate = (winning_trades / completed_trades) * 100
+        win_rate = (
+            winning_trades
+            / completed_trades
+        ) * 100
     else:
         win_rate = 0.0
 
-    maximum_drawdown = calculate_max_drawdown(equity_history)
+    maximum_drawdown = calculate_max_drawdown(
+        equity_history
+    )
 
-    status = risk_manager.status_report(final_balance)
+    status = risk_manager.status_report(
+        final_balance
+    )
 
     print()
     print("=" * 95)
     print("FA CRYPTO ENGINE — FINAL BACKTEST REPORT")
     print("=" * 95)
-
     print(
         f"Starting Capital          : "
         f"€{settings.starting_capital:.2f}"
@@ -833,23 +864,7 @@ def run_backtest(
         trade_history,
         csv_file,
     )
-    return {
-        "symbol": symbol,
-        "interval": interval,
-        "candle_limit": candle_limit,
-        "starting_capital": settings.starting_capital,
-        "final_balance": final_balance,
-        "total_profit": total_profit,
-        "roi_percent": roi_percent,
-        "completed_trades": completed_trades,
-        "winning_trades": winning_trades,
-        "losing_trades": losing_trades,
-        "win_rate": win_rate,
-        "maximum_drawdown": maximum_drawdown,
-        "final_mode": str(status["mode"]),
-        "final_reason": status["reason"],
-        "csv_file": csv_file,
-    }
+
     return {
         "symbol": symbol,
         "interval": interval,
@@ -868,34 +883,28 @@ def run_backtest(
         "csv_file": csv_file,
     }
 
+
 # ============================================================
 # PROGRAM ENTRY
 # ============================================================
 
+
 if __name__ == "__main__":
-
     try:
-
         run_backtest()
 
     except KeyboardInterrupt:
-
         print()
         print("Backtest stopped manually.")
 
     except Exception as error:
-
         print()
         print("=" * 95)
         print("BACKTEST ERROR")
         print("=" * 95)
-
         print(
             f"{type(error).__name__}: "
             f"{error}"
         )
-
         print("=" * 95)
-
         raise
-    

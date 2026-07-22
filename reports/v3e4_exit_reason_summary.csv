@@ -1,0 +1,3 @@
+exit_reason,trades,winners,losers,win_rate,net_profit,gross_profit,gross_loss,profit_factor,expectancy,total_fees,pre_fee_profit,fees_as_percent_of_absolute_net,average_hold_hours,median_hold_hours,partial_profit_trades,stop_loss_exits,longest_losing_streak,edge_label
+HARD DRAWDOWN LOCK,1,0,1,0.0,-10.71371452,0.0,10.71371452,0.0,-10.71371452,3.86309872,-6.8506158,36.057510332093486,2.0,2.0,0,0,1,INSUFFICIENT_SAMPLE
+STOP LOSS,49,14,35,28.57142857142857,-357.8138568,289.33088534999996,647.14474215,0.4470883660257518,-7.302323608163265,240.55417732,-117.25967947999999,67.22886013172422,7.48469387755102,4.75,13,49,6,REJECT

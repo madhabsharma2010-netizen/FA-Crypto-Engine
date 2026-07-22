@@ -1,0 +1,2 @@
+trade_number,symbol,entry_time,exit_time,entry_price,exit_price,initial_stop,final_stop,initial_quantity,partial_quantity,entry_notional,account_risk_percent,setup_score,entry_reward_risk,route,buy_fee,sell_fees,partial_profit_taken,profit,profit_percent,exit_reason,cash_after_trade
+1,SOLUSDT,2026-06-15 11:00:00,2026-06-15 22:30:00,71.91594,73.93731852,71.25385983,73.97430568,33.98379989,8.49594997,2443.97691399,0.225,100.0,2.2154,ADAPTIVE_BREAKOUT,2.44397691,2.50643638,True,57.509057,2.3507,STOP LOSS,10057.509057

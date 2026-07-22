@@ -1,0 +1,8 @@
+group,allowed_opportunities,current_detected,current_capture_percent,revised_detected,revised_capture_percent,additional_captures,median_revised_delay_hours
+OVERALL,38,7,18.421052631578945,20,52.63157894736842,13,3.0
+BTCUSDT,14,1,7.142857142857142,8,57.14285714285714,7,3.5
+ETHUSDT,11,4,36.36363636363637,5,45.45454545454545,1,5.0
+SOLUSDT,4,0,0.0,3,75.0,3,2.0
+XRPUSDT,2,1,50.0,2,100.0,1,1.5
+LINKUSDT,5,1,20.0,2,40.0,1,2.5
+DOGEUSDT,2,0,0.0,0,0.0,0,0.0

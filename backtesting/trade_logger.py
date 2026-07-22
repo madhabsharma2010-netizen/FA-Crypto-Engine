@@ -24,4 +24,22 @@ class TradeLogger:
 
         for trade in self.trades:
             print(trade)
-            
+        import csv
+
+...
+
+    def export_csv(self, filename="trade_history.csv"):
+
+        with open(filename, "w", newline="") as file:
+
+            writer = csv.DictWriter(
+                file,
+                fieldnames=["Buy", "Sell", "Profit"]
+            )
+
+            writer.writeheader()
+
+            writer.writerows(self.trades)
+
+        print(f"Trade history saved to {filename}")
+        

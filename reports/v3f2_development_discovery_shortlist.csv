@@ -1,0 +1,9 @@
+feature,median_threshold,preferred_side,preferred_trades,preferred_win_rate_percent,preferred_profit_factor,preferred_net_pnl_eur,other_trades,other_win_rate_percent,other_profit_factor,other_net_pnl_eur,preferred_profitable_months,preferred_observed_months,development_discovery_candidate,must_validate_out_of_sample
+setup_score,100.0,LOWER,6,33.3333,0.36422816,-48.36678031,32,21.875,0.49553636,-230.84729907,1,5,False,True
+theoretical_rr_at_signal_close,2.4,UPPER,24,29.1667,0.77459769,-65.98612444,14,14.2857,0.11500485,-213.22795494,2,7,False,True
+actual_rr_after_gap_and_slippage,2.224163,UPPER,19,21.0526,0.70403529,-85.19686521,19,26.3158,0.2107459,-194.01721417,1,7,False,True
+gross_projected_target_move_percent,2.5950345,UPPER,19,21.0526,0.6444646,-95.11755146,19,26.3158,0.30830254,-184.09652792,1,8,False,True
+cost_as_percent_of_projected_target_move,11.56055,LOWER,19,21.0526,0.6444646,-95.11755146,19,26.3158,0.30830254,-184.09652792,1,8,False,True
+target_move_to_round_trip_cost_multiple,8.650115,UPPER,19,21.0526,0.6444646,-95.11755146,19,26.3158,0.30830254,-184.09652792,1,8,False,True
+opening_gap_atr,0.0508255,UPPER,19,31.5789,0.54355489,-96.91809985,19,15.7895,0.43272296,-182.29597953,2,6,False,True
+relative_strength_percentile,83.3333,LOWER,8,25.0,0.21142207,-103.35076395,30,23.3333,0.5632086,-175.86331543,0,4,False,True

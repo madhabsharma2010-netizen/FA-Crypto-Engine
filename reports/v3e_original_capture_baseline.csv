@@ -1,0 +1,8 @@
+group,opportunities,risk_allowed,risk_blocked,detected,capture_percent,pullback_only,breakout_only,both_same_time,missed,median_detection_delay_hours,median_move_percent,median_adverse_percent
+OVERALL,184,38,146,7,18.4211,3,4,0,31,3.0,3.3973,0.5507
+BTCUSDT,43,14,29,1,7.1429,0,1,0,13,0.0,2.0501,0.5507
+ETHUSDT,36,11,25,4,36.3636,3,1,0,7,4.0,3.3529,0.6228
+SOLUSDT,30,4,26,0,0.0,0,0,0,4,0.0,3.7922,0.5395
+XRPUSDT,25,2,23,1,50.0,0,1,0,1,0.0,4.3648,0.4593
+LINKUSDT,33,5,28,1,20.0,0,1,0,4,0.0,4.1445,0.9564
+DOGEUSDT,17,2,15,0,0.0,0,0,0,2,0.0,4.927,0.3955

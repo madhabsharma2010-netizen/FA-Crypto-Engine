@@ -1,0 +1,2 @@
+trade_log_found,completed_trades,winning_trades,losing_trades,win_rate_percent,gross_profit_eur,gross_loss_eur,average_win_eur,average_loss_eur,realized_win_loss_ratio,profit_factor,losing_stop_exit_percent,winning_full_take_profit_percent,total_explicit_fees_eur,fees_as_percent_of_gross_profit
+True,38,9,29,23.6842,254.47100125,533.68508063,28.27455569,18.40293381,1.53641566,0.47681865,89.6552,0.0,156.33919143,61.4369
