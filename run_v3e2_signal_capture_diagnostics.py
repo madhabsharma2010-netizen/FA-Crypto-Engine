@@ -96,6 +96,76 @@ def risk_state_allowed(
     )
 
 
+def _ensure_route_rolling_features(
+    frame: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Precompute route rolling features once per dataframe.
+
+    Formulas, shifts and rolling windows are identical to
+    the original route calculations. This is a performance
+    optimization only.
+    """
+
+    if "_ROUTE_LOW_PREV_3" not in frame.columns:
+        frame["_ROUTE_LOW_PREV_3"] = (
+            frame["low"]
+            .shift(1)
+            .rolling(3)
+            .min()
+        )
+
+    if "_ROUTE_LOW_SHIFT4_6" not in frame.columns:
+        frame["_ROUTE_LOW_SHIFT4_6"] = (
+            frame["low"]
+            .shift(4)
+            .rolling(6)
+            .min()
+        )
+
+    if "_ROUTE_LOW_PREV_6" not in frame.columns:
+        frame["_ROUTE_LOW_PREV_6"] = (
+            frame["low"]
+            .shift(1)
+            .rolling(6)
+            .min()
+        )
+
+    if "_ROUTE_HIGH_PREV_8" not in frame.columns:
+        frame["_ROUTE_HIGH_PREV_8"] = (
+            frame["high"]
+            .shift(1)
+            .rolling(8)
+            .max()
+        )
+
+    if "_ROUTE_HIGH_PREV_12" not in frame.columns:
+        frame["_ROUTE_HIGH_PREV_12"] = (
+            frame["high"]
+            .shift(1)
+            .rolling(12)
+            .max()
+        )
+
+    if "_ROUTE_HIGH_PREV_24" not in frame.columns:
+        frame["_ROUTE_HIGH_PREV_24"] = (
+            frame["high"]
+            .shift(1)
+            .rolling(24)
+            .max()
+        )
+
+    if "_ROUTE_ATR_MEDIAN_PREV_48" not in frame.columns:
+        frame["_ROUTE_ATR_MEDIAN_PREV_48"] = (
+            frame["ATR14"]
+            .shift(1)
+            .rolling(48)
+            .median()
+        )
+
+    return frame
+
+
 def evaluate_ignition_signal(
     symbol: str,
     frame: pd.DataFrame,
@@ -104,6 +174,10 @@ def evaluate_ignition_signal(
     shock_level: ShockLevel,
     relative_strength: float,
 ) -> RouteSignal:
+    frame = _ensure_route_rolling_features(
+        frame
+    )
+
     position = frame.index.get_loc(
         decision_time
     )
@@ -156,27 +230,15 @@ def evaluate_ignition_signal(
     ) * 100.0
 
     recent_low_3h = float(
-        frame["low"]
-        .shift(1)
-        .rolling(3)
-        .min()
-        .iloc[position]
+        candle["_ROUTE_LOW_PREV_3"]
     )
 
     earlier_low_6h = float(
-        frame["low"]
-        .shift(4)
-        .rolling(6)
-        .min()
-        .iloc[position]
+        candle["_ROUTE_LOW_SHIFT4_6"]
     )
 
     recent_high_8h = float(
-        frame["high"]
-        .shift(1)
-        .rolling(8)
-        .max()
-        .iloc[position]
+        candle["_ROUTE_HIGH_PREV_8"]
     )
 
     candle_range = max(
@@ -344,6 +406,10 @@ def evaluate_adaptive_breakout(
     shock_level: ShockLevel,
     relative_strength: float,
 ) -> RouteSignal:
+    frame = _ensure_route_rolling_features(
+        frame
+    )
+
     position = frame.index.get_loc(
         decision_time
     )
@@ -390,35 +456,19 @@ def evaluate_adaptive_breakout(
     )
 
     prior_high_8h = float(
-        frame["high"]
-        .shift(1)
-        .rolling(8)
-        .max()
-        .iloc[position]
+        candle["_ROUTE_HIGH_PREV_8"]
     )
 
     prior_high_12h = float(
-        frame["high"]
-        .shift(1)
-        .rolling(12)
-        .max()
-        .iloc[position]
+        candle["_ROUTE_HIGH_PREV_12"]
     )
 
     prior_high_24h = float(
-        frame["high"]
-        .shift(1)
-        .rolling(24)
-        .max()
-        .iloc[position]
+        candle["_ROUTE_HIGH_PREV_24"]
     )
 
     atr_median_48h = float(
-        frame["ATR14"]
-        .shift(1)
-        .rolling(48)
-        .median()
-        .iloc[position]
+        candle["_ROUTE_ATR_MEDIAN_PREV_48"]
     )
 
     candle_range = max(
