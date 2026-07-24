@@ -22,3 +22,9 @@ logs/*.csv
 # OS files
 .DS_Store
 Thumbs.db
+
+# Historical market-data cache
+data/cache/
+
+# Python profiler output
+*.prof

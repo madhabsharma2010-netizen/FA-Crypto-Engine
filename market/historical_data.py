@@ -1,6 +1,11 @@
 from datetime import datetime, timezone
+import hashlib
+import pickle
+from pathlib import Path
+import time
 
 import pandas as pd
+import requests
 from binance.client import Client
 
 from core.indicators import (
@@ -13,9 +18,77 @@ from core.indicators import (
 from strategies.ema_rsi_strategy_v2 import EmaRsiStrategyV2
 
 
-client = Client()
+client = Client(
+    ping=False,
+    requests_params={
+        "timeout": 20,
+    },
+)
+
+# Binance official public market-data-only REST endpoint.
+# No API key/authentication required.
+client.API_URL = "https://data-api.binance.vision/api"
 
 BINANCE_MAX_BATCH = 1000
+
+MAX_FETCH_RETRIES = 5
+RETRY_BACKOFF_SECONDS = 1.0
+
+HISTORICAL_CACHE_ENABLED = True
+HISTORICAL_CACHE_VERSION = "v1"
+HISTORICAL_CACHE_DIR = Path(
+    "data/cache/binance"
+)
+
+
+def _get_klines_with_retry(
+    **params,
+) -> list[list]:
+    """
+    Fetch public Binance klines with bounded retry/backoff.
+
+    This changes only data transport reliability.
+    Trading strategy, risk, surveillance, sizing and
+    execution rules are unaffected.
+    """
+
+    last_error: Exception | None = None
+
+    for attempt in range(
+        1,
+        MAX_FETCH_RETRIES + 1,
+    ):
+        try:
+            return client.get_klines(
+                **params
+            )
+
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as error:
+            last_error = error
+
+            if attempt >= MAX_FETCH_RETRIES:
+                break
+
+            delay = (
+                RETRY_BACKOFF_SECONDS
+                * (2 ** (attempt - 1))
+            )
+
+            print(
+                "Binance market-data connection "
+                f"retry {attempt}/{MAX_FETCH_RETRIES} "
+                f"in {delay:.1f}s..."
+            )
+
+            time.sleep(delay)
+
+    raise ConnectionError(
+        "Binance public market-data request failed "
+        f"after {MAX_FETCH_RETRIES} attempts."
+    ) from last_error
 
 
 def _to_milliseconds(
@@ -55,6 +128,50 @@ def _empty_candle_frame() -> pd.DataFrame:
     )
 
 
+def _fixed_range_cache_path(
+    symbol: str,
+    interval: str,
+    start_time: str,
+    end_time: str,
+) -> Path:
+    """
+    Build a deterministic cache path for an exact
+    historical Binance request.
+
+    Cache affects data transport only.
+    Trading logic is unchanged.
+    """
+
+    cache_key = "|".join(
+        [
+            HISTORICAL_CACHE_VERSION,
+            symbol.upper(),
+            str(interval),
+            start_time,
+            end_time,
+        ]
+    )
+
+    digest = hashlib.sha256(
+        cache_key.encode("utf-8")
+    ).hexdigest()[:20]
+
+    safe_interval = (
+        str(interval)
+        .replace("/", "_")
+        .replace("\\", "_")
+    )
+
+    return (
+        HISTORICAL_CACHE_DIR
+        / (
+            f"{symbol.lower()}_"
+            f"{safe_interval}_"
+            f"{digest}.pkl"
+        )
+    )
+
+
 def _fetch_fixed_range(
     symbol: str,
     interval: str,
@@ -65,6 +182,42 @@ def _fetch_fixed_range(
     Fetch an entire fixed Binance date range
     in batches of up to 1,000 candles.
     """
+
+    cache_path: Path | None = None
+
+    if (
+        HISTORICAL_CACHE_ENABLED
+        and end_time is not None
+    ):
+        cache_path = _fixed_range_cache_path(
+            symbol=symbol,
+            interval=interval,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        if cache_path.exists():
+            try:
+                with cache_path.open("rb") as file:
+                    cached_candles = pickle.load(file)
+
+                if isinstance(cached_candles, list):
+                    print(
+                        "Historical cache hit: "
+                        f"{symbol} {interval} | "
+                        f"{start_time} -> {end_time}"
+                    )
+                    return cached_candles
+
+            except (
+                OSError,
+                EOFError,
+                pickle.PickleError,
+            ) as error:
+                print(
+                    "Historical cache ignored: "
+                    f"{type(error).__name__}: {error}"
+                )
 
     start_ms = _to_milliseconds(
         start_time
@@ -90,11 +243,13 @@ def _fetch_fixed_range(
     next_start_ms = start_ms
 
     while next_start_ms < end_ms:
-        batch = client.get_klines(
+        batch = _get_klines_with_retry(
             symbol=symbol,
             interval=interval,
             startTime=next_start_ms,
-            endTime=end_ms,
+            # Project date ranges are end-exclusive.
+            # Binance endTime is inclusive, so subtract 1 ms.
+            endTime=end_ms - 1,
             limit=BINANCE_MAX_BATCH,
         )
 
@@ -115,6 +270,41 @@ def _fetch_fixed_range(
 
         if len(batch) < BINANCE_MAX_BATCH:
             break
+
+    if (
+        cache_path is not None
+        and all_candles
+    ):
+        HISTORICAL_CACHE_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        temporary_path = cache_path.with_suffix(
+            cache_path.suffix + ".tmp"
+        )
+
+        try:
+            with temporary_path.open("wb") as file:
+                pickle.dump(
+                    all_candles,
+                    file,
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+
+            temporary_path.replace(
+                cache_path
+            )
+
+            print(
+                "Historical cache stored: "
+                f"{symbol} {interval} | "
+                f"{start_time} -> {end_time}"
+            )
+
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
 
     return all_candles
 
@@ -159,7 +349,7 @@ def get_historical_candles(
             end_time=end_time,
         )
     else:
-        candles = client.get_klines(
+        candles = _get_klines_with_retry(
             symbol=normalized_symbol,
             interval=interval,
             limit=min(
