@@ -2,6 +2,8 @@
 
 import json
 import os
+import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,33 +26,70 @@ def atomic_write(
     path: Path,
     payload: dict[str, Any],
 ) -> None:
+    path = Path(path)
+
     path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    temporary_path = path.with_suffix(
-        path.suffix + ".tmp"
-    )
-
-    with temporary_path.open(
-        "w",
-        encoding="utf-8",
-    ) as output:
-        json.dump(
-            payload,
-            output,
-            indent=2,
-            sort_keys=True,
+    file_descriptor, temporary_name = (
+        tempfile.mkstemp(
+            prefix=f"{path.name}.",
+            suffix=".tmp",
+            dir=str(path.parent),
         )
-
-        output.flush()
-        os.fsync(output.fileno())
-
-    os.replace(
-        temporary_path,
-        path,
     )
+
+    temporary_path = Path(
+        temporary_name
+    )
+
+    try:
+        with os.fdopen(
+            file_descriptor,
+            "w",
+            encoding="utf-8",
+        ) as output:
+            json.dump(
+                payload,
+                output,
+                indent=2,
+                sort_keys=True,
+            )
+
+            output.flush()
+            os.fsync(
+                output.fileno()
+            )
+
+        last_error = None
+
+        for attempt in range(10):
+            try:
+                os.replace(
+                    temporary_path,
+                    path,
+                )
+                return
+
+            except PermissionError as error:
+                last_error = error
+
+                time.sleep(
+                    0.05
+                    * (attempt + 1)
+                )
+
+        if last_error is not None:
+            raise last_error
+
+    finally:
+        if temporary_path.exists():
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
 
 
 def load_or_create_state(
