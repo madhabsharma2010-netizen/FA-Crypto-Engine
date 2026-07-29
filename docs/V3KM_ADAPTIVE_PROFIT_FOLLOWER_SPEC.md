@@ -1,118 +1,238 @@
 ﻿# V3KM Adaptive Profit Follower — Frozen Design
 
 ## Status
-Research design only. Not approved for real-money production.
+
+Design specification only.
+
+This strategy is not approved for live trading or production deployment.
+It must pass historical validation, execution simulation, cost stress,
+paper trading and safety testing first.
 
 ## Objective
-Follow profitable market movement, stay in cash when conditions are weak,
-and protect capital when market evidence turns negative.
 
-Fees are acceptable only when expected net profit remains positive after
-fees, spread and slippage.
+Follow profitable market movement while maintaining a protective
+bodyguard around capital.
 
-## Decision Layers
+The objective is not maximum win rate or minimum fees.
+
+The objective is:
+
+- positive net expectancy after all trading costs
+- participation in strong trends
+- fast defense when market conditions turn against the position
+- no compulsory trading during weak or uncertain conditions
+- preservation of the frozen V3D3 safety architecture
+
+## Architecture
 
 ### Observer
-Uses completed historical data only:
 
-- 15m momentum, volume, volatility and shock detection
-- 1h, 2h and 4h trend context
+Continuously evaluates:
+
+- 15-minute momentum and market shocks
+- 30-minute and 60-minute movement
+- 1-hour, 2-hour and 4-hour trend alignment
 - BTC daily background trend
 - BTC and ETH leadership
 - market breadth
-- asset relative strength
+- volume confirmation
+- ATR expansion and volatility
+- relative strength of each asset
+- liquidity, spread and execution costs
+
+Historical decisions use only completed candles.
 
 ### Chef
-Maintains two separate scores:
 
-1. Opportunity Score — upside quality
-2. Shock Score — downside danger
+Produces two independent outputs:
 
-They must not be merged into one ambiguous score.
+1. Opportunity Score
+2. Shock Score
 
-## Capital Ladder
+Opportunity and danger must never be combined into one ambiguous score.
 
-- Score below 45: CASH — no new buying
-- Score 45–64: PROBE — 25% to 35% of permitted size
-- Score 65–79: BUILD — 70% to 75% of permitted size
-- Score 80–100: FULL PACE — full permitted size
+### Bodyguard
 
-Full permitted size remains subject to frozen portfolio limits.
+Manages existing positions.
+
+The Bodyguard follows profitable movement, raises protection when the
+position improves and exits when causal market evidence turns negative.
+
+## Opportunity Score
+
+### Score below 45 — CASH
+
+- no new position
+- no compulsory buy
+- existing positions remain under Bodyguard control
+
+### Score 45 to 64 — PROBE
+
+- approximately 25% to 35% of permitted position size
+- only when the asset itself shows positive relative strength
+- shock state must be NORMAL
+
+### Score 65 to 79 — BUILD
+
+- approximately 70% to 75% of permitted position size
+- scaling allowed only when the existing position is not losing
+- market score and asset strength must remain supportive
+
+### Score 80 to 100 — FULL PACE
+
+- use full permitted position size
+- all frozen portfolio and risk caps remain active
+- full permitted size does not mean full account deployment
+
+The score is initially a confidence score, not a calibrated probability.
+
+## Scaling Rules
 
 Capital may be added only when:
 
-- existing position is not losing
+- the existing position is not losing
 - price confirms progress
-- relative strength remains positive
-- opportunity score remains supportive
-- shock state is NORMAL
-- stop is not moved downward
+- asset relative strength remains positive
+- market opportunity score improves or remains strong
+- Shock Score remains NORMAL
+- the protective stop does not move downward
 
-Averaging down is prohibited.
+Prohibited:
 
-## Bodyguard
+- averaging down
+- adding because price became cheaper
+- widening the stop
+- removing the hard stop
+- increasing leverage
+- exceeding frozen portfolio limits
 
-When price and trend remain healthy:
+## Bodyguard Rules
 
-- hold the profitable position
-- no compulsory time exit
+### Profitable and healthy position
+
+- hold the position
+- no fixed holding-time exit
 - no compulsory fixed profit target
-- allow strong runners to continue
-- stop may tighten but never widen
+- allow the profitable trend to continue
+- protective stop may only tighten
 
-When opportunity deteriorates:
+### Opportunity score deteriorates
 
 - stop further buying
-- tighten protection where causally justified
-- do not sell solely because of a small score decline
+- maintain or tighten protection
+- do not automatically sell solely because the score fell slightly
 
-Sell when fast completed-candle evidence confirms:
+### Confirmed negative transition
 
-- structure breakdown
-- material relative-strength failure
-- negative market transition
+Sell at the next executable price when:
 
-Emergency exchange-side hard stop remains active in live trading.
+- fast market structure breaks
+- asset relative strength becomes materially negative
+- opportunity state turns negative
+- the move is confirmed by causal 15-minute evidence
 
-## Shock Protection
+### Emergency protection
 
-Existing V3D shock architecture remains frozen:
+- exchange-side hard stop remains active in live trading
+- asset shock rules may tighten stops
+- market shock rules may reduce exposure
+- severe shock may force cash mode
+- the stop never moves downward
 
-- NORMAL: normal operation
-- WARNING: freeze new buying and tighten protection
-- SHOCK: freeze entries and reduce exposure
-- SEVERE: force exit or cash mode
+## Stop Placement
 
-## Speed
+The initial stop must represent strategy invalidation rather than an
+arbitrarily tiny percentage loss.
 
-Historical research:
+The active stop is the highest valid protective level among:
 
-- 15-minute decision and management cycle
-- 1h, 2h, 4h and daily context
+- the previous active stop
+- confirmed recent market structure minus an ATR buffer
+- emergency asset-shock stop
+- market-shock protective stop
+- frozen maximum-risk stop
 
-Future live system:
+A new stop based on the current candle becomes active only after the
+candle is completed in historical testing.
 
-- websocket monitoring
+An already-active stop is checked first to avoid optimistic intrabar bias.
+
+## Shock Architecture
+
+Existing V3D shock protection remains frozen.
+
+### NORMAL
+
+- normal strategy operation
+
+### WARNING
+
+- freeze new buying
+- tighten protection
+- do not widen stops
+
+### SHOCK
+
+- freeze entries
+- reduce exposure according to the frozen shock rules
+
+### SEVERE
+
+- force exit or cash mode according to the frozen safety rules
+
+## Decision Speed
+
+Historical prototype:
+
+- primary decision and management cycle: completed 15-minute candle
+- market context: 1-hour, 2-hour, 4-hour and daily data
+
+Future live execution:
+
+- websocket market monitoring
 - exchange-side resting hard stop
-- watchdog and reconnect logic
-- optional 1m/5m fast execution layer
+- optional 1-minute or 5-minute fast structure layer
+- 15-minute confirmation and broader trend context
 
-Emergency stops must not wait for a 1h, 2h or 4h candle close.
+A 1-hour, 2-hour or 4-hour candle must not delay an emergency stop.
 
-## Frozen Risk Architecture
+## Cost Rule
 
-- maximum 2 open positions
-- maximum 50% total deployment
-- maximum 0.75% total open risk
+Fees are acceptable when the expected trade remains profitable after:
+
+- buy fee
+- sell fee
+- spread
+- slippage
+- funding, when applicable
+
+A trade must clear a realistic cost hurdle.
+
+Gross profit without positive net expectancy is not an edge.
+
+## News
+
+News may later operate as a live risk veto or confidence modifier.
+
+News must not be included in historical testing without a reliable,
+timestamped historical news dataset.
+
+Future knowledge must never influence an earlier backtest decision.
+
+## Frozen Portfolio Safety
+
+- maximum open positions: 2
+- maximum total deployment: 50%
+- maximum total open risk: 0.75%
 - one new entry per hour
 - maximum one high-beta asset at a time
 - no averaging down
 - no stop widening
 - no hard-stop removal
-- persistent 5% drawdown lock
-- daily and weekly circuit breakers
+- persistent 5% account drawdown lock
+- daily and weekly circuit breakers remain active
 
-## Evidence So Far
+## Current Research Evidence
 
 V3KJ shared-portfolio baseline:
 
@@ -121,22 +241,30 @@ V3KJ shared-portfolio baseline:
 - 2024: +3.84%
 - 2025H1: -0.59%
 
-Each window restarted from EUR 10,000 and is not a continuous live return.
+The windows were independently reset to EUR 10,000 and must not be
+presented as one continuous live-account return.
 
-V3KL aggressive profit protection was rejected because it reduced
-performance across the tested windows.
+V3KL aggressive profit protection was rejected because it damaged the
+baseline across the combined test windows.
 
-## Next Step
+The original V3KI and V3KJ logic remains preserved.
 
-Before integrating adaptive capital deployment, run an isolated
-Opportunity Score audit covering:
+## Next Validation Step
 
-- forward returns by score band
-- MFE and MAE
-- every historical window separately
+Run an isolated V3KM Opportunity Score audit before building the complete
+trading engine.
+
+The audit must test:
+
+- forward returns by Opportunity Score band
+- MFE and MAE by score band
+- each historical window separately
 - asset-level stability
-- realistic fees and slippage
-- monotonicity of score versus outcome
+- net returns after fees and slippage
+- monotonicity between stronger scores and better outcomes
 - sufficient sample size
-- no look-ahead
-- no threshold tuning from one window
+- no threshold optimization from one window
+- no look-ahead or repainting
+
+Only after this audit may the adaptive capital ladder be integrated into
+the complete portfolio engine.
