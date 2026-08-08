@@ -1,0 +1,53 @@
+{
+  "branch": "feature/v3km-adaptive-profit-follower",
+  "canonical_control": "V3KJ_SHARED_PORTFOLIO",
+  "epoch_id": "V3KY-001",
+  "forward_start_utc": "2026-08-08T21:09:02Z",
+  "frozen_source_commit": "54ebca1a979f90ace478bd3787a52cf5311f5ad1",
+  "historical_backfill_allowed": false,
+  "live_orders_authorized": false,
+  "mode": "PAPER_ONLY_FORWARD_VALIDATION",
+  "retuning_allowed": false,
+  "risk_contract": {
+    "averaging_down_allowed": false,
+    "daily_loss_lock_fraction": 0.01,
+    "daily_profit_entry_lock_fraction": 0.02,
+    "hard_drawdown_lock_fraction": 0.05,
+    "hard_stop_removal_allowed": false,
+    "high_beta_assets": [
+      "SOLUSDT",
+      "XRPUSDT",
+      "LINKUSDT",
+      "DOGEUSDT"
+    ],
+    "leverage_increase_allowed": false,
+    "max_deployment_fraction": 0.5,
+    "max_entries_per_hour": 1,
+    "max_high_beta_positions": 1,
+    "max_simultaneous_positions": 2,
+    "minimum_notional_eur": 500.0,
+    "open_risk_fraction": 0.0075,
+    "stop_widening_allowed": false,
+    "weekly_loss_lock_fraction": 0.025
+  },
+  "shadow_policy": {
+    "shadow_can_change_execution": false,
+    "shadow_observers_allowed": true,
+    "v3kx_rule_active": false
+  },
+  "universe": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "LINKUSDT",
+    "DOGEUSDT"
+  ],
+  "validation": {
+    "daily_profit_required": false,
+    "interim_weeks": 12,
+    "primary_weeks": 16,
+    "rolling_weekly_target_eur": 200.0,
+    "weekly_profit_required": false
+  }
+}
