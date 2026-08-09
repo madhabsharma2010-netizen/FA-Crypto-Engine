@@ -210,6 +210,7 @@ def v3ky_record(record_type, event_time, **payload):
         "_replay_index",
     ):
         index = {}
+        sealed_horizon = None
 
         ledger_path = Path(
             "state/v3ky/"
@@ -224,10 +225,10 @@ def v3ky_record(record_type, event_time, **payload):
                 if not raw.strip():
                     continue
 
-                existing = json.loads(raw)
+                existing_record = json.loads(raw)
 
                 key = identity(
-                    existing
+                    existing_record
                 )
 
                 if key in index:
@@ -236,10 +237,39 @@ def v3ky_record(record_type, event_time, **payload):
                         f"LEDGER_IDENTITY:{key}"
                     )
 
-                index[key] = existing
+                index[key] = (
+                    existing_record
+                )
+
+                if (
+                    existing_record.get(
+                        "record_type"
+                    )
+                    == "EQUITY"
+                ):
+                    existing_time = (
+                        v3ky_timestamp(
+                            existing_record[
+                                "event_timestamp"
+                            ]
+                        )
+                    )
+
+                    if (
+                        sealed_horizon is None
+                        or existing_time
+                        > sealed_horizon
+                    ):
+                        sealed_horizon = (
+                            existing_time
+                        )
 
         v3ky_record._replay_index = (
             index
+        )
+
+        v3ky_record._sealed_horizon = (
+            sealed_horizon
         )
 
     index = v3ky_record._replay_index
@@ -249,20 +279,28 @@ def v3ky_record(record_type, event_time, **payload):
 
     if existing is not None:
 
-        for field, value in (
-            candidate.items()
-        ):
-            if (
-                existing.get(field)
-                != value
-            ):
+        for field, value in candidate.items():
+            if existing.get(field) != value:
                 raise RuntimeError(
                     "V3KY_REPLAY_CONFLICT:"
-                    f"{key}:"
-                    f"{field}"
+                    f"{key}:{field}"
                 )
 
         return existing
+
+    sealed_horizon = (
+        v3ky_record._sealed_horizon
+    )
+
+    if (
+        sealed_horizon is not None
+        and ts <= sealed_horizon
+    ):
+        raise RuntimeError(
+            "V3KY_RETROACTIVE_RECORD_ATTEMPT:"
+            f"{event_iso}:"
+            f"{record_type}"
+        )
 
     record_payload = dict(payload)
 
@@ -278,10 +316,7 @@ def v3ky_record(record_type, event_time, **payload):
         record_payload
     )
 
-    if not isinstance(
-        record,
-        dict,
-    ):
+    if not isinstance(record, dict):
         ledger_path = Path(
             "state/v3ky/"
             "v3ky_001_forward_ledger.jsonl"
@@ -296,9 +331,7 @@ def v3ky_record(record_type, event_time, **payload):
             if line.strip()
         ][-1]
 
-        record = json.loads(
-            latest
-        )
+        record = json.loads(latest)
 
     index[key] = record
 

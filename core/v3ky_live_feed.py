@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 import csv
 import json
@@ -10,7 +10,11 @@ OUTDIR = Path("state/v3ky/market")
 
 BASE = "https://data-api.binance.vision/api/v3/klines"
 INTERVAL = "1h"
-TARGET_BARS = 3000
+WARMUP_START_UTC = datetime(
+    2026, 1, 1,
+    tzinfo=timezone.utc,
+)
+MIN_WARMUP_BARS = 3000
 PAGE_LIMIT = 1000
 HOUR_MS = 60 * 60 * 1000
 
@@ -77,12 +81,17 @@ now_ms = int(
     * 1000
 )
 
+warmup_start_ms = int(
+    WARMUP_START_UTC.timestamp()
+    * 1000
+)
+
 OUTDIR.mkdir(
     parents=True,
     exist_ok=True,
 )
 
-print("========== V3KY 3000H FEED SYNC ==========")
+print("========== V3KY FIXED-WARMUP FEED SYNC ==========")
 print(
     "Epoch start             :",
     config["forward_start_utc"],
@@ -104,7 +113,7 @@ for symbol in config["universe"]:
     candles = {}
     end_ms = now_ms
 
-    while len(candles) < TARGET_BARS:
+    while True:
 
         page = fetch_page(
             symbol,
@@ -131,16 +140,21 @@ for symbol in config["universe"]:
             for bar in closed
         )
 
+        if earliest_open <= warmup_start_ms:
+            break
+
         end_ms = earliest_open - 1
 
         if len(page) < PAGE_LIMIT:
             break
 
-    ordered_keys = sorted(candles)[
-        -TARGET_BARS:
+    ordered_keys = [
+        key
+        for key in sorted(candles)
+        if key >= warmup_start_ms
     ]
 
-    if len(ordered_keys) < 1000:
+    if len(ordered_keys) < MIN_WARMUP_BARS:
         raise RuntimeError(
             f"INSUFFICIENT_WARMUP:"
             f"{symbol}:{len(ordered_keys)}"
